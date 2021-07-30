@@ -9,6 +9,8 @@ ENV DOCROOT=/var/www/html
 
 EXPOSE 8080
 
+VOLUME /var/log/httpd
+
 RUN yum install -y --disableplugin=subscription-manager httpd && \
     yum clean all -y --disableplugin=subcription-manager && \
     rm -rf /run/httpd && mkdir /run/httpd && \
