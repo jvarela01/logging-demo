@@ -15,8 +15,8 @@ RUN yum install -y --disableplugin=subscription-manager httpd && \
     yum clean all -y --disableplugin=subcription-manager && \
     rm -rf /run/httpd && mkdir /run/httpd && \
     sed -i "s/Listen 80/Listen 8080/g" /etc/httpd/conf/httpd.conf && \
-    chgrp -R 0 /var/log/httpd /var/run/httpd /etc/httpd/logs && \
-    chmod -R g=u /var/log/httpd /var/run/httpd /etc/httpd/logs
+    chgrp -R 0 /var/log/httpd /var/run/httpd /etc/httpd && \
+    chmod -R g=u /var/log/httpd /var/run/httpd /etc/httpd
 
 COPY src/ ${DOCROOT}/
     
