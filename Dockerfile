@@ -14,6 +14,8 @@ RUN yum install -y --disableplugin=subscription-manager httpd && \
     rm -rf /run/httpd && mkdir /run/httpd && \
     sed -i "s/Listen 80/Listen 8080/g" /etc/httpd/conf/httpd.conf && \
     sed -i "s/#ServerName www.example.com:80/ServerName 0.0.0.0:8080/g" /etc/httpd/conf/httpd.conf && \
+    sed -i "s/CustomLog \"logs/access_log\" combined/CustomLog /dev/stdout combined/g" /etc/httpd/conf/httpd.conf && \
+    sed -i "s/ErrorLog \"logs/error_log\"/ErrorLog /dev/stdout/g" /etc/httpd/conf/httpd.conf && \
     chgrp -R 0 /var/log/httpd /var/run/httpd && \
     chmod -R g=u /var/log/httpd /var/run/httpd
 
