@@ -160,4 +160,87 @@ $ oc rsh -n logging-demo simple-apache-654f5fdf7-679h7 tail -f /var/log/httpd/ac
 10.128.2.18 - - [30/Jul/2021:20:04:54 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
 ```
 
-Confirm in the Kibana GUI that the logs have not been captured yet
+Close the two additional terminals.
+
+Confirm in the OpenShift Kibana GUI that the logs have not been captured yet
+
+![No Register Logs On Kibana](https://raw.githubusercontent.com/jvarela01/logging-demo/main/images/kibana-no-logs.png)
+
+Generate apache-logs empty dir volume for simple-apache deployment mounted on /var/log/httpd dir.
+
+```bash
+$ oc set volumes deployment/simple-apache --add --type emptyDir --mount-path /var/log/httpd --name apache-logs -n logging-demo
+deployment.apps/simple-apache volume updated
+```
+
+Edit simple-apache deployment and add apache-log-sidecar sidecar container wich print the access_log file to stdout with the tail command. Add this lines to containers section:
+
+
+```bash
+$ oc edit deployment simple-apache -n logging-demo
+
+...skipped
+    spec:
+      containers:
+      - image: registry.access.redhat.com/ubi8/ubi:8.0
+        name: apache-log-sidecar
+        command:
+        - /bin/bash
+        - -c
+        - tail -f /var/log/httpd/access_log
+        volumeMounts:
+        - mountPath: /var/log/httpd
+          name: apache-logs
+...skipped
+
+deployment.apps/simple-apache edited
+```
+
+Wait for pod on Running state, note that the pod already has 2 containers.
+
+```bash
+$ oc get pods -n logging-demo
+NAME                             READY   STATUS      RESTARTS   AGE
+simple-apache-1-build            0/1     Completed   0          2d20h
+simple-apache-7d7f4847df-c79xr   2/2     Running     1          2m5s
+```
+
+In a separated terminal, get and follow apache-log-sidecar container on apache-log-sidecar pod logs
+
+```bash
+$ oc logs -f simple-apache-7d7f4847df-c79xr -c apache-log-sidecar -n logging-demo
+```
+
+Test the application a few times and validate the output from log pod and access_log on container
+
+```bash
+$ for i in $(seq 1 5)
+> do
+> curl $(oc get route simple-apache -o jsonpath='{.spec.host}' -n logging-demo)
+> done
+<html>
+  <head>
+    <title>Hola Mundo Apache OCP</title>
+  </head>
+  <body>
+    <center>
+      <h1>Hola Mundo Apache OCP</h1>
+    </center>
+  </body>
+</html>
+(x5)
+
+####Container apache-log-sidecar log output
+$ oc logs -f simple-apache-7d7f4847df-c79xr -c apache-log-sidecar -n logging-demo
+10.128.2.18 - - [02/Aug/2021:16:18:15 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:18:17 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:18:18 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.128.2.18 - - [02/Aug/2021:16:18:19 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:18:21 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+```
+
+Close the aditional terminal
+
+Validate the captured logs on OpenShift Kibana GUI
+
+![No Register Logs On Kibana](https://raw.githubusercontent.com/jvarela01/logging-demo/main/images/kibana-sidecar.png)
