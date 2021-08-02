@@ -243,4 +243,179 @@ Close the aditional terminal
 
 Validate the captured logs on OpenShift Kibana GUI
 
-![No Register Logs On Kibana](https://raw.githubusercontent.com/jvarela01/logging-demo/main/images/kibana-sidecar.png)
+![Kibana Sidecar](https://raw.githubusercontent.com/jvarela01/logging-demo/main/images/kibana-sidecar.png)
+
+## Second scenario: Sending logs to stdout
+
+Clean all resources wich contains app=simple-apache tag
+
+```bash
+$ oc delete all -l app=simple-apache -n logging-demo
+service "simple-apache" deleted
+deployment.apps "simple-apache" deleted
+buildconfig.build.openshift.io "simple-apache" deleted
+build.build.openshift.io "simple-apache-1" deleted
+imagestream.image.openshift.io "simple-apache" deleted
+imagestream.image.openshift.io "ubi" deleted
+route.route.openshift.io "simple-apache" deleted
+```
+
+Create simple-apache application from git via oc. Note that the branch used for this exercise is logs-to-stdout
+
+```bash
+$ oc new-app --name simple-apache https://github.com/jvarela01/logging-demo#logs-to-stdout --strategy=docker -n logging-demo
+--> Found container image 11f9dba (22 months old) from registry.access.redhat.com for "registry.access.redhat.com/ubi8/ubi:8.0"
+
+    Red Hat Universal Base Image 8 
+    ------------------------------ 
+    The Universal Base Image is designed and engineered to be the base layer for all of your containerized applications, middleware and utilities. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly.
+
+    Tags: base rhel8
+
+    * An image stream tag will be created as "ubi:8.0" that will track the source image
+    * A Docker build using source code from https://github.com/jvarela01/logging-demo#logs-to-stdout will be created
+      * The resulting image will be pushed to image stream tag "simple-apache:latest"
+      * Every time "ubi:8.0" changes a new build will be triggered
+
+--> Creating resources ...
+    imagestream.image.openshift.io "ubi" created
+    imagestream.image.openshift.io "simple-apache" created
+    buildconfig.build.openshift.io "simple-apache" created
+    deployment.apps "simple-apache" created
+    service "simple-apache" created
+--> Success
+    Build scheduled, use 'oc logs -f buildconfig/simple-apache' to track its progress.
+    Application is not exposed. You can expose services to the outside world by executing one or more of the commands below:
+     'oc expose service/simple-apache' 
+    Run 'oc status' to view your app.
+```
+
+This branch contains a modified Dockerfile that sends the apache web server access and error logs to standard output
+
+```Dockerfile
+FROM registry.access.redhat.com/ubi8/ubi:8.0
+
+LABEL io.k8s.description="A basic Apache HTTP Server" \
+      io.k8s.display-name="Simple Apache HTTP Server" \
+      io.openshift.expose-services="8080:http" \
+      io.openshift.tags="apache, httpd"
+
+ENV DOCROOT=/var/www/html
+
+EXPOSE 8080
+
+RUN yum install -y --disableplugin=subscription-manager httpd && \
+    yum clean all -y --disableplugin=subcription-manager && \
+    rm -rf /run/httpd && mkdir /run/httpd && \
+    sed -i "s/Listen 80/Listen 8080/g" /etc/httpd/conf/httpd.conf && \
+    sed -i "s/#ServerName www.example.com:80/ServerName 0.0.0.0:8080/g" /etc/httpd/conf/httpd.conf && \
+    sed -i "s/CustomLog \"logs\/access_log\" combined/CustomLog \/dev\/stdout combined/g" /etc/httpd/conf/httpd.conf && \
+    sed -i "s/ErrorLog \"logs\/error_log\"/ErrorLog \/dev\/stdout/g" /etc/httpd/conf/httpd.conf && \
+    chgrp -R 0 /var/log/httpd /var/run/httpd && \
+    chmod -R g=u /var/log/httpd /var/run/httpd
+
+COPY src/ ${DOCROOT}/
+    
+USER 1001
+
+CMD ["/usr/sbin/httpd","-DFOREGROUND"]
+```
+
+Monitor the build process
+
+```bash
+$ oc logs -f bc/simple-apache -n logging-demo
+Cloning "https://github.com/jvarela01/logging-demo" ...
+	Commit:	02a7fc59de9b34cecf5079ccf0f50b3f045c3ba8 (Updated sed commands with scape character for /)
+	Author:	Jorge Varela <jvarela@redhat.com>
+	Date:	Fri Jul 30 14:15:50 2021 -0500
+Replaced Dockerfile FROM image registry.access.redhat.com/ubi8/ubi:8.0
+Caching blobs under "/var/cache/blobs".
+
+Pulling image registry.access.redhat.com/ubi8/ubi@sha256:8275e2ad7f458e329bdc8c0e7543cff1729998fe515a281d49638246de8e39ee ...
+Getting image source signatures
+Copying blob sha256:641d7cc5cbc48a13c68806cf25d5bcf76ea2157c3181e1db4f5d0edae34954ac
+Copying blob sha256:c65691897a4d140d441e2024ce086de996b1c4620832b90c973db81329577274
+Copying config sha256:11f9dba4d1bc7bbead64adb8fd73ea92dca5fac88a9b5c2c9796abcf2e97846d
+Writing manifest to image destination
+... skipped
+Pushing image image-registry.openshift-image-registry.svc:5000/logging-demo/simple-apache:latest ...
+Getting image source signatures
+Copying blob sha256:64a87b91c007d2cae3abc12e815a86a81df65d6e0f796747baeb1c97062bc111
+Copying blob sha256:5f448eb3347dcd045db0c9b5e5b9245fd981014d66e466202e59d18b8bfa326f
+Copying blob sha256:c65691897a4d140d441e2024ce086de996b1c4620832b90c973db81329577274
+Copying blob sha256:641d7cc5cbc48a13c68806cf25d5bcf76ea2157c3181e1db4f5d0edae34954ac
+Copying config sha256:b8fac7ba771907b061f23b80701347305306cc687e752c5c15f0d4609a9e0198
+Writing manifest to image destination
+Storing signatures
+Successfully pushed image-registry.openshift-image-registry.svc:5000/logging-demo/simple-apache@sha256:9ad30c918a62f89fa5f72ca20b469e341b3bfc0b45a2edc6cf625ea3247e401f
+Push successful
+```
+
+Wait for pod on Running State
+
+```bash
+$ oc get pods -n logging-demo
+NAME                            READY   STATUS      RESTARTS   AGE
+simple-apache-1-build           0/1     Completed   0          5m26s
+simple-apache-d55bcf6d5-jbvlc   1/1     Running     0          4m43s
+```
+
+In a separated terminal, get and follow the pod logs
+
+```bash
+$ oc logs -f simple-apache-d55bcf6d5-jbvlc -n logging-demo
+[Mon Aug 02 16:44:00.196729 2021] [lbmethod_heartbeat:notice] [pid 1:tid 140093121501440] AH02282: No slotmem from mod_heartmonitor
+[Mon Aug 02 16:44:00.197284 2021] [http2:warn] [pid 1:tid 140093121501440] AH02951: mod_ssl does not seem to be enabled
+[Mon Aug 02 16:44:00.199805 2021] [mpm_event:notice] [pid 1:tid 140093121501440] AH00489: Apache/2.4.37 (Red Hat Enterprise Linux) configured -- resuming normal operations
+[Mon Aug 02 16:44:00.199823 2021] [core:notice] [pid 1:tid 140093121501440] AH00094: Command line: '/usr/sbin/httpd -D FOREGROUND'
+```
+
+Create a route for the simple-apache service
+
+```bash
+$ oc expose service simple-apache -n logging-demo
+route.route.openshift.io/simple-apache exposed
+```
+
+Test the application a few times and validate the output from log pod and access_log on container
+
+```bash
+$ for i in $(seq 1 5)
+> do
+> curl $(oc get route simple-apache -o jsonpath='{.spec.host}' -n logging-demo)
+> done
+<html>
+  <head>
+    <title>Hola Mundo Apache OCP</title>
+  </head>
+  <body>
+    <center>
+      <h1>Hola Mundo Apache OCP</h1>
+    </center>
+  </body>
+</html>
+(x5)
+
+####Pod Log Output
+$ oc logs -f simple-apache-d55bcf6d5-jbvlc
+[Mon Aug 02 16:44:00.196729 2021] [lbmethod_heartbeat:notice] [pid 1:tid 140093121501440] AH02282: No slotmem from mod_heartmonitor
+[Mon Aug 02 16:44:00.197284 2021] [http2:warn] [pid 1:tid 140093121501440] AH02951: mod_ssl does not seem to be enabled
+[Mon Aug 02 16:44:00.199805 2021] [mpm_event:notice] [pid 1:tid 140093121501440] AH00489: Apache/2.4.37 (Red Hat Enterprise Linux) configured -- resuming normal operations
+[Mon Aug 02 16:44:00.199823 2021] [core:notice] [pid 1:tid 140093121501440] AH00094: Command line: '/usr/sbin/httpd -D FOREGROUND'
+10.129.2.6 - - [02/Aug/2021:16:50:18 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:50:19 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:50:22 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:50:23 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+10.129.2.6 - - [02/Aug/2021:16:50:24 +0000] "GET / HTTP/1.1" 200 158 "-" "curl/7.76.1"
+```
+
+Close the additional terminal.
+
+Validate the captured logs on OpenShift Kibana GUI
+
+![Kibana Stdout](https://raw.githubusercontent.com/jvarela01/logging-demo/main/images/kibana-stdout.png)
+
+## Conclusion
+
+With this demo we have used two ways to send the logs to the OpenShift EFK stack
